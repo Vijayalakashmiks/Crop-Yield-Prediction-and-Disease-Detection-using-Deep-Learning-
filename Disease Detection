@@ -1,0 +1,202 @@
+import os
+# Suppress TensorFlow logs
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'  # Suppress detailed TensorFlow logs
+os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'  # Disable oneDNN optimizations to avoid related warnings
+
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning, message="Your PyDataset class should call super().init")
+import numpy as np
+import matplotlib.pyplot as plt
+from tensorflow.keras.preprocessing import image
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, Dropout
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+
+# Set dataset directory paths
+data_dir = r'C:/Users/Vijayalakshmi  K S/OneDrive/disease/PLD_3_Classes_256'  # Replace with your dataset path
+Training_dir = os.path.join(data_dir, 'Training')
+validation_dir = os.path.join(data_dir, 'validation')
+
+# Verify dataset directories
+if not os.path.exists(Training_dir) or not os.path.exists(validation_dir):
+    raise FileNotFoundError(f"Dataset directories not found! Check train_dir: {Training_dir}, validation_dir: {validation_dir}")
+
+try:
+    num_classes = len(next(os.walk(Training_dir))[1])  # Number of subfolders = number of classes
+    print(f"Number of classes detected: {num_classes}")
+except StopIteration:
+    raise ValueError(f"No subfolders found in {Training_dir}. Ensure the dataset is properly structured.")
+
+# Define image parameters
+img_width, img_height = 150, 150
+batch_size = 32
+epochs = 3
+
+# Data augmentation and preprocessing
+Training_datagen = ImageDataGenerator(
+    rescale=1.0 / 255,
+    rotation_range=30,
+    width_shift_range=0.2,
+    height_shift_range=0.2,
+    shear_range=0.2,
+    zoom_range=0.2,
+    horizontal_flip=True
+)
+
+validation_datagen = ImageDataGenerator(rescale=1.0 / 255)
+
+train_generator = Training_datagen.flow_from_directory(
+    Training_dir,
+    target_size=(img_width, img_height),
+    batch_size=batch_size,
+    class_mode='categorical'
+)
+
+validation_generator = validation_datagen.flow_from_directory(
+    validation_dir,
+    target_size=(img_width, img_height),
+    batch_size=batch_size,
+    class_mode='categorical'
+)
+
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Input, Conv2D, MaxPooling2D, Flatten, Dense, Dropout
+
+# Define the CNN model
+model = Sequential([
+    Input(shape=(150, 150, 3)),  # Define input shape explicitly using Input layer
+    Conv2D(32, (3, 3), activation='relu'),
+    MaxPooling2D(pool_size=(2, 2)),
+    Conv2D(64, (3, 3), activation='relu'),
+    MaxPooling2D(pool_size=(2, 2)),
+    Conv2D(128, (3, 3), activation='relu'),
+    MaxPooling2D(pool_size=(2, 2)),
+    Flatten(),
+    Dense(128, activation='relu'),
+    Dropout(0.5),
+    Dense(3, activation='softmax')  # Replace 3 with the number of your classes
+])
+
+# Compile the model
+model.compile(
+    optimizer='adam',
+    loss='categorical_crossentropy',
+    metrics=['accuracy']
+)
+
+# Display model summary
+model.summary()
+
+
+# Train the model
+epochs = 3# Adjust the number of epochs as needed
+history = model.fit(
+    train_generator,
+    steps_per_epoch=train_generator.samples // batch_size,
+    validation_data=validation_generator,
+    validation_steps=validation_generator.samples // batch_size,
+    epochs=epochs
+)
+#print("Available keys in history:", history.history.keys())
+
+# Save the trained model
+#model.save('plant_disease_model.h5')
+
+# Evaluate the model on validation data
+val_loss, val_acc = model.evaluate(validation_generator)
+#print(f"Validation Accuracy: {val_acc:.2f}")
+def plot_history(history):
+    acc = history.history['accuracy']
+    val_acc = history.history['val_accuracy']
+    loss = history.history['loss']
+    val_loss = history.history['val_loss']
+    epochs_range = range(len(acc))  # Automatically adjust based on training epochs
+
+    plt.figure(figsize=(12, 4))
+
+    # Accuracy plot
+    plt.subplot(1, 2, 1)
+    plt.plot(epochs_range, acc, label='Training Accuracy')
+    plt.plot(epochs_range, val_acc, label='Validation Accuracy')
+    plt.legend(loc='lower right')
+    plt.title('Training and Validation Accuracy')
+
+    # Loss plot
+    plt.subplot(1, 2, 2)
+    plt.plot(epochs_range, loss, label='Training Loss')
+    plt.plot(epochs_range, val_loss, label='Validation Loss')
+    plt.legend(loc='upper right')
+    plt.title('Training and Validation Loss')
+
+    plt.show()
+
+# Plot the training history
+plot_history(history)
+
+# Define a function to predict an image class
+def predict_image(model, img_path):
+    try:
+        # Load and preprocess the image
+        img = image.load_img(img_path, target_size=(img_width, img_height))
+        img_array = image.img_to_array(img) / 255.0  # Normalize the image
+        img_array = np.expand_dims(img_array, axis=0)  # Add batch dimension
+
+        # Make a prediction
+        predictions = model.predict(img_array)
+        predicted_class = np.argmax(predictions, axis=1)[0]
+        confidence = predictions[0][predicted_class]
+
+       # print(f"Predicted class: {predicted_class}, Confidence: {confidence:.2f}")
+        return predicted_class
+
+    except FileNotFoundError:
+        print(f"Error: The file {img_path} was not found. Please check the path.")
+        return None
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        return None
+
+# Example: Replace with a valid image path
+test_image_path = r'C:\Users\Vijayalakshmi  K S\OneDrive\disease\PLD_3_Classes_256\Training\Late_Blight\Late_Blight_14.jpg'
+
+# Predict the class for a test image
+predicted_class = predict_image(model, test_image_path)
+
+
+# Define class labels based on the dataset
+class_labels = {0: "Early_Blight", 1: "Healthy", 2: "Late_Blight"}
+
+# Function to interpret the predicted class and output disease information
+def find_disease(predicted_class):
+    try:
+        # Match the predicted class with the corresponding disease
+        disease_name = class_labels.get(predicted_class, "Unknown Disease")
+
+        # Disease details
+        disease_info = {
+            "Early_Blight": (
+                "Early Blight is a common disease caused by the fungus Alternaria solani. "
+                "Symptoms include small, irregular dark spots on leaves, which may eventually cause leaf drop. "
+                "Management: Use fungicides, rotate crops, and avoid overhead watering."
+            ),
+            "Healthy": (
+                "The plant is healthy with no visible disease symptoms. Maintain proper care to ensure continued health."
+            ),
+            "Late_Blight": (
+                "Late Blight is caused by the pathogen Phytophthora infestans. "
+                "Symptoms include large, water-soaked lesions on leaves and stems, leading to plant collapse. "
+                "Management: Use resistant plant varieties, apply fungicides, and remove infected plants promptly."
+            ),
+        }
+
+        # Retrieve the information about the predicted disease
+        info = disease_info.get(disease_name, "Details about this disease are not available.")
+        print(f"Disease Name: {disease_name}")
+        print(f"Details: {info}")
+
+    except Exception as e:
+        print(f"An error occurred while finding disease details: {e}")
+
+# Call the find_disease function with the predicted class
+if predicted_class is not None:
+    find_disease(predicted_class)
